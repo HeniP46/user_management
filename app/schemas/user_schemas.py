@@ -1,18 +1,23 @@
 from builtins import ValueError, any, bool, str
 from pydantic import BaseModel, EmailStr, Field, validator, root_validator
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 import uuid
 import re
 from app.models.user_model import UserRole
 from app.utils.nickname_gen import generate_nickname
+from app.schemas.link_schema import Link  # Add this import
 
 
 def validate_url(url: Optional[str]) -> Optional[str]:
+    """
+    Validates URL format with a more permissive regex that accepts common URL patterns.
+    """
     if url is None:
         return url
-    url_regex = r'^https?:\/\/[^\s/$.?#].[^\s]*$'
+    # More permissive regex that allows common URL patterns including query parameters
+    url_regex = r'^https?:\/\/[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*(:[0-9]{1,5})?(\/.*)?$'
     if not re.match(url_regex, url):
         raise ValueError('Invalid URL format')
     return url
@@ -24,7 +29,7 @@ class UserBase(BaseModel):
     last_name: Optional[str] = Field(None, example="Doe")
     bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
     profile_picture_url: Optional[str] = Field(None, example="https://example.com/profiles/john.jpg")
-    linkedin_profile_url: Optional[str] =Field(None, example="https://linkedin.com/in/johndoe")
+    linkedin_profile_url: Optional[str] = Field(None, example="https://linkedin.com/in/johndoe")
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
     role: UserRole
 
@@ -44,7 +49,7 @@ class UserUpdate(UserBase):
     last_name: Optional[str] = Field(None, example="Doe")
     bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
     profile_picture_url: Optional[str] = Field(None, example="https://example.com/profiles/john.jpg")
-    linkedin_profile_url: Optional[str] =Field(None, example="https://linkedin.com/in/johndoe")
+    linkedin_profile_url: Optional[str] = Field(None, example="https://linkedin.com/in/johndoe")
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
     role: Optional[UserRole] = Field(None, example=UserRole.AUTHENTICATED)
     password: Optional[str] = Field(None, example="NewSecure*1234")
@@ -61,6 +66,10 @@ class UserResponse(UserBase):
     nickname: Optional[str] = Field(None, min_length=3, max_length=50, pattern=r'^[\w-]+$', example=generate_nickname())    
     is_professional: Optional[bool] = Field(default=False, example=True)
     role: UserRole
+    last_login_at: Optional[datetime] = Field(None, example=datetime.now())
+    created_at: Optional[datetime] = Field(None, example=datetime.now())
+    updated_at: Optional[datetime] = Field(None, example=datetime.now())
+    links: Optional[List[Link]] = Field(default=None, description="HATEOAS navigation links")  # Changed to List[Link]
 
 class LoginRequest(BaseModel):
     email: str = Field(..., example="john.doe@example.com")
@@ -72,9 +81,13 @@ class ErrorResponse(BaseModel):
 
 class UserListResponse(BaseModel):
     items: List[UserResponse] = Field(..., example=[{
-        "id": uuid.uuid4(), "nickname": generate_nickname(), "email": "john.doe@example.com",
-        "first_name": "John", "bio": "Experienced developer", "role": "AUTHENTICATED",
-        "last_name": "Doe", "bio": "Experienced developer", "role": "AUTHENTICATED",
+        "id": str(uuid.uuid4()), 
+        "nickname": generate_nickname(), 
+        "email": "john.doe@example.com",
+        "first_name": "John", 
+        "last_name": "Doe", 
+        "bio": "Experienced developer", 
+        "role": "AUTHENTICATED",
         "profile_picture_url": "https://example.com/profiles/john.jpg", 
         "linkedin_profile_url": "https://linkedin.com/in/johndoe", 
         "github_profile_url": "https://github.com/johndoe"
@@ -82,3 +95,4 @@ class UserListResponse(BaseModel):
     total: int = Field(..., example=100)
     page: int = Field(..., example=1)
     size: int = Field(..., example=10)
+    links: Optional[List[Link]] = Field(default=None, description="Pagination links")  # Changed to List[Link]

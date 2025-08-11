@@ -10,15 +10,12 @@ from app.schemas.pagination_schema import PaginationLink
 def create_link(rel: str, href: str, method: str = "GET", action: str = None) -> Link:
     return Link(rel=rel, href=href, method=method, action=action)
 
-def create_pagination_link(rel: str, base_url: str, params: dict) -> Dict[str, Any]:
-    """Return a dictionary instead of PaginationLink object"""
+def create_pagination_link(rel: str, base_url: str, params: dict) -> Link:
+    """Return a Link object for consistency"""
     # Ensure parameters are added in a specific order
     query_string = f"skip={params['skip']}&limit={params['limit']}"
-    return {
-        "rel": rel,
-        "href": f"{base_url}?{query_string}",
-        "method": "GET"
-    }
+    href = f"{base_url}?{query_string}"
+    return Link(rel=rel, href=href, action="GET", type="application/json")
 
 def create_user_links(user_id: UUID, request: Request) -> List[Link]:
     """
@@ -34,8 +31,8 @@ def create_user_links(user_id: UUID, request: Request) -> List[Link]:
         for rel, action, method, action_desc in actions
     ]
 
-def generate_pagination_links(request: Request, skip: int, limit: int, total_items: int) -> List[Dict[str, Any]]:
-    """Return list of dictionaries instead of PaginationLink objects"""
+def generate_pagination_links(request: Request, skip: int, limit: int, total_items: int) -> List[Link]:
+    """Return list of Link objects for consistency"""
     base_url = str(request.url).split('?')[0]  # Remove existing query parameters
     total_pages = (total_items + limit - 1) // limit
     
