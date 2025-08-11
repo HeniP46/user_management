@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import (
     Column, String, Integer, DateTime, Boolean, func, Enum as SQLAlchemyEnum
 )
-from sqlalchemy.dialects.postgresql import UUID, ENUM
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -92,4 +92,4 @@ class User(Base):
     def update_professional_status(self, status: bool):
         """Updates the professional status and logs the update time."""
         self.is_professional = status
-        self.professional_status_updated_at = func.now()
+        self.professional_status_updated_at = datetime.utcnow()

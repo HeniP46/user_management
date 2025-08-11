@@ -101,6 +101,76 @@ class UserResponse(UserBase):
     links: Optional[List[Link]] = Field(default=None, description="HATEOAS navigation links")
 
 
+# NEW PROFILE MANAGEMENT SCHEMAS
+class UserProfileUpdate(BaseModel):
+    """Schema for updating user profile information"""
+    first_name: Optional[str] = Field(None, max_length=100, description="User's first name")
+    last_name: Optional[str] = Field(None, max_length=100, description="User's last name")
+    bio: Optional[str] = Field(None, max_length=500, description="User's bio")
+    profile_picture_url: Optional[str] = Field(None, description="URL to user's profile picture")
+    linkedin_profile_url: Optional[str] = Field(None, description="User's LinkedIn profile URL")
+    github_profile_url: Optional[str] = Field(None, description="User's GitHub profile URL")
+
+    _validate_urls = validator(
+        "profile_picture_url", "linkedin_profile_url", "github_profile_url",
+        pre=True, allow_reuse=True
+    )(validate_url)
+
+    @validator("first_name", "last_name", "bio", pre=True)
+    def sanitize_string_fields(cls, v):
+        """Sanitize string fields to prevent XSS attacks"""
+        if v is not None:
+            return html.escape(str(v))
+        return v
+
+    class Config:
+        from_attributes = True
+
+
+class ProfessionalStatusUpdate(BaseModel):
+    """Schema for professional status updates"""
+    user_id: uuid.UUID = Field(..., description="ID of the user to update")
+    
+    class Config:
+        from_attributes = True
+
+
+class UserProfileResponse(BaseModel):
+    """Schema for user profile response"""
+    id: uuid.UUID
+    nickname: str
+    email: EmailStr
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    bio: Optional[str] = None
+    profile_picture_url: Optional[str] = None
+    linkedin_profile_url: Optional[str] = None
+    github_profile_url: Optional[str] = None
+    role: UserRole
+    is_professional: bool
+    professional_status_updated_at: Optional[datetime] = None
+    email_verified: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class UserSearchResponse(BaseModel):
+    """Schema for user search results"""
+    id: uuid.UUID
+    nickname: str
+    email: EmailStr
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    role: UserRole
+    is_professional: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
 class LoginRequest(BaseModel):
     # Accept either 'username' or 'email' for compatibility with OAuth2PasswordRequestForm
     email: Optional[EmailStr] = Field(None, example="john.doe@example.com")
