@@ -1,7 +1,7 @@
 from builtins import Exception, bool, classmethod, int, str
 from datetime import datetime, timezone
 import secrets
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 from pydantic import ValidationError
 from sqlalchemy import func, null, update, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -24,7 +24,7 @@ class UserService:
     async def _execute_query(cls, session: AsyncSession, query):
         try:
             result = await session.execute(query)
-            await session.commit()
+            # Don't commit here for read operations - let the calling method handle commits
             return result
         except SQLAlchemyError as e:
             logger.error(f"Database error: {e}")
@@ -68,49 +68,77 @@ class UserService:
             new_user.role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS            
             if new_user.role == UserRole.ADMIN:
                 new_user.email_verified = True
-
             else:
                 new_user.verification_token = generate_verification_token()
                 await email_service.send_verification_email(new_user)
 
             session.add(new_user)
             await session.commit()
+            await session.refresh(new_user)
             return new_user
         except ValidationError as e:
             logger.error(f"Validation error during user creation: {e}")
+            await session.rollback()
+            return None
+        except Exception as e:
+            logger.error(f"Error during user creation: {e}")
+            await session.rollback()
             return None
 
     @classmethod
-    async def update(cls, session: AsyncSession, user_id: UUID, update_data: Dict[str, str]) -> Optional[User]:
+    async def update(cls, session: AsyncSession, user_or_id: Union[User, UUID], update_data: Dict[str, str]) -> Optional[User]:
         try:
+            # Handle both User object and UUID
+            if isinstance(user_or_id, User):
+                user = user_or_id
+                user_id = user.id
+            else:
+                user_id = user_or_id
+                user = await cls.get_by_id(session, user_id)
+                if not user:
+                    logger.error(f"User {user_id} not found.")
+                    return None
+
             validated_data = UserUpdate(**update_data).model_dump(exclude_unset=True)
 
             if 'password' in validated_data:
                 validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
             
-            query = update(User).where(User.id == user_id).values(**validated_data).execution_options(synchronize_session="fetch")
-            await cls._execute_query(session, query)
-            updated_user = await cls.get_by_id(session, user_id)
-            if updated_user:
-                session.refresh(updated_user)  # Explicitly refresh the updated user object
-                logger.info(f"User {user_id} updated successfully.")
-                return updated_user
-            else:
-                logger.error(f"User {user_id} not found after update attempt.")
-            return None
-        except Exception as e:  # Broad exception handling for debugging
+            # Update user attributes directly
+            for key, value in validated_data.items():
+                if hasattr(user, key):
+                    setattr(user, key, value)
+            
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            logger.info(f"User {user_id} updated successfully.")
+            return user
+        except Exception as e:
             logger.error(f"Error during user update: {e}")
+            await session.rollback()
             return None
 
     @classmethod
-    async def delete(cls, session: AsyncSession, user_id: UUID) -> bool:
-        user = await cls.get_by_id(session, user_id)
-        if not user:
-            logger.info(f"User with ID {user_id} not found.")
+    async def delete(cls, session: AsyncSession, user_or_id: Union[User, UUID]) -> bool:
+        try:
+            # Handle both User object and UUID
+            if isinstance(user_or_id, User):
+                user_id = user_or_id.id
+            else:
+                user_id = user_or_id
+                
+            user = await cls.get_by_id(session, user_id)
+            if not user:
+                logger.info(f"User with ID {user_id} not found.")
+                return False
+            await session.delete(user)
+            await session.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error during user deletion: {e}")
+            await session.rollback()
             return False
-        await session.delete(user)
-        await session.commit()
-        return True
 
     @classmethod
     async def list_users(cls, session: AsyncSession, skip: int = 0, limit: int = 10) -> List[User]:

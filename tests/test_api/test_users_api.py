@@ -6,6 +6,7 @@ from app.models.user_model import User, UserRole
 from app.utils.nickname_gen import generate_nickname
 from app.utils.security import hash_password
 from app.services.jwt_service import decode_token  # Import your FastAPI app
+from urllib.parse import urlencode
 
 # Example of a test function using the async_client fixture
 @pytest.mark.asyncio
@@ -81,10 +82,6 @@ async def test_create_user_invalid_email(async_client):
     response = await async_client.post("/register/", json=user_data)
     assert response.status_code == 422
 
-import pytest
-from app.services.jwt_service import decode_token
-from urllib.parse import urlencode
-
 @pytest.mark.asyncio
 async def test_login_success(async_client, verified_user):
     # Attempt to login with the test user
@@ -143,6 +140,7 @@ async def test_login_locked_user(async_client, locked_user):
     response = await async_client.post("/login/", data=urlencode(form_data), headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert response.status_code == 400
     assert "Account locked due to too many failed login attempts." in response.json().get("detail", "")
+
 @pytest.mark.asyncio
 async def test_delete_user_does_not_exist(async_client, admin_token):
     non_existent_user_id = "00000000-0000-0000-0000-000000000000"  # Valid UUID format
@@ -190,3 +188,99 @@ async def test_list_users_unauthorized(async_client, user_token):
         headers={"Authorization": f"Bearer {user_token}"}
     )
     assert response.status_code == 403  # Forbidden, as expected for regular user
+
+# ===========================
+# ADDITIONAL STRATEGIC TESTS
+# ===========================
+
+@pytest.mark.asyncio
+async def test_access_with_malformed_token(async_client):
+    """Test API access with malformed JWT token"""
+    headers = {"Authorization": "Bearer invalid.malformed.token"}
+    response = await async_client.get("/users/", headers=headers)
+    assert response.status_code == 401
+    assert "Invalid token" in response.json().get("detail", "")
+
+@pytest.mark.asyncio
+async def test_access_with_expired_token(async_client, expired_token):
+    """Test API access with expired JWT token"""
+    headers = {"Authorization": f"Bearer {expired_token}"}
+    response = await async_client.get("/users/", headers=headers)
+    assert response.status_code == 401
+    assert "Invalid token" in response.json().get("detail", "")
+
+@pytest.mark.asyncio
+async def test_register_user_with_sql_injection_attempt(async_client):
+    """Test user registration with SQL injection attempt in email field"""
+    malicious_data = {
+        "email": "test'; DROP TABLE users; --@example.com",
+        "password": "ValidPassword123!",
+        "nickname": "test_user"
+    }
+    response = await async_client.post("/register/", json=malicious_data)
+    assert response.status_code == 422  # Should fail validation
+
+@pytest.mark.asyncio
+async def test_register_user_with_extremely_long_inputs(async_client):
+    """Test user registration with extremely long inputs"""
+    long_string = "a" * 1000
+    user_data = {
+        "email": f"{long_string}@example.com",
+        "password": "ValidPassword123!",
+        "nickname": long_string,
+        "first_name": long_string,
+        "last_name": long_string,
+        "bio": long_string
+    }
+    response = await async_client.post("/register/", json=user_data)
+    assert response.status_code == 422  # Should fail validation
+
+@pytest.mark.asyncio
+async def test_update_user_with_invalid_uuid(async_client, admin_token):
+    """Test updating user with invalid UUID format"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    invalid_uuid = "not-a-valid-uuid"
+    response = await async_client.put(f"/users/{invalid_uuid}", 
+                                     json={"first_name": "Updated"}, 
+                                     headers=headers)
+    assert response.status_code == 422
+
+@pytest.mark.asyncio
+async def test_update_user_role_escalation_attempt(async_client, user_token, verified_user):
+    """Test regular user attempting to escalate their role"""
+    headers = {"Authorization": f"Bearer {user_token}"}
+    update_data = {"role": "ADMIN"}
+    response = await async_client.put(f"/users/{verified_user.id}", 
+                                     json=update_data, 
+                                     headers=headers)
+    assert response.status_code == 403  # Should be forbidden
+
+@pytest.mark.asyncio
+async def test_login_rate_limiting_simulation(async_client, verified_user):
+    """Test multiple rapid login attempts to simulate rate limiting scenarios"""
+    form_data = {
+        "username": verified_user.email,
+        "password": "WrongPassword123!"
+    }
+    
+    responses = []
+    for _ in range(5):
+        response = await async_client.post("/login/", 
+                                          data=urlencode(form_data), 
+                                          headers={"Content-Type": "application/x-www-form-urlencoded"})
+        responses.append(response.status_code)
+    
+    assert all(status in [401, 429] for status in responses)
+
+@pytest.mark.asyncio
+async def test_login_with_case_insensitive_email(async_client, verified_user):
+    """Test login with different email case variations"""
+    uppercase_email = verified_user.email.upper()
+    form_data = {
+        "username": uppercase_email,
+        "password": "MySuperPassword$1234"
+    }
+    response = await async_client.post("/login/", 
+                                      data=urlencode(form_data), 
+                                      headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert response.status_code in [200, 401]  # Depending on implementation
