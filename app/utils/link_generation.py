@@ -1,8 +1,7 @@
 from builtins import dict, int, max, str
-from typing import List, Callable
+from typing import List, Callable, Dict, Any
 from urllib.parse import urlencode
 from uuid import UUID
-
 from fastapi import Request
 from app.schemas.link_schema import Link
 from app.schemas.pagination_schema import PaginationLink
@@ -11,10 +10,15 @@ from app.schemas.pagination_schema import PaginationLink
 def create_link(rel: str, href: str, method: str = "GET", action: str = None) -> Link:
     return Link(rel=rel, href=href, method=method, action=action)
 
-def create_pagination_link(rel: str, base_url: str, params: dict) -> PaginationLink:
+def create_pagination_link(rel: str, base_url: str, params: dict) -> Dict[str, Any]:
+    """Return a dictionary instead of PaginationLink object"""
     # Ensure parameters are added in a specific order
     query_string = f"skip={params['skip']}&limit={params['limit']}"
-    return PaginationLink(rel=rel, href=f"{base_url}?{query_string}")
+    return {
+        "rel": rel,
+        "href": f"{base_url}?{query_string}",
+        "method": "GET"
+    }
 
 def create_user_links(user_id: UUID, request: Request) -> List[Link]:
     """
@@ -30,19 +34,21 @@ def create_user_links(user_id: UUID, request: Request) -> List[Link]:
         for rel, action, method, action_desc in actions
     ]
 
-def generate_pagination_links(request: Request, skip: int, limit: int, total_items: int) -> List[PaginationLink]:
-    base_url = str(request.url)
+def generate_pagination_links(request: Request, skip: int, limit: int, total_items: int) -> List[Dict[str, Any]]:
+    """Return list of dictionaries instead of PaginationLink objects"""
+    base_url = str(request.url).split('?')[0]  # Remove existing query parameters
     total_pages = (total_items + limit - 1) // limit
+    
     links = [
         create_pagination_link("self", base_url, {'skip': skip, 'limit': limit}),
         create_pagination_link("first", base_url, {'skip': 0, 'limit': limit}),
         create_pagination_link("last", base_url, {'skip': max(0, (total_pages - 1) * limit), 'limit': limit})
     ]
-
+    
     if skip + limit < total_items:
         links.append(create_pagination_link("next", base_url, {'skip': skip + limit, 'limit': limit}))
-
+    
     if skip > 0:
         links.append(create_pagination_link("prev", base_url, {'skip': max(skip - limit, 0), 'limit': limit}))
-
+    
     return links
