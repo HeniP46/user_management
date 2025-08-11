@@ -1,6 +1,7 @@
 from pathlib import Path
 from pydantic import Field, AnyUrl, ConfigDict
 from pydantic_settings import BaseSettings
+from functools import lru_cache
 
 class Settings(BaseSettings):
     model_config = ConfigDict(
@@ -44,5 +45,9 @@ class Settings(BaseSettings):
     smtp_username: str = Field(default="your-mailtrap-username")
     smtp_password: str = Field(default="your-mailtrap-password")
 
-# Singleton instance
+@lru_cache()
+def get_settings():
+    return Settings()
+
+# Singleton instance (you can keep this if other parts of your code use it)
 settings = Settings()

@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, sessionmaker
+from app.config_loader import get_settings
 
 Base = declarative_base()
 
@@ -23,3 +24,16 @@ class Database:
         if cls._session_factory is None:
             raise ValueError("Database not initialized. Call `initialize()` first.")
         return cls._session_factory
+
+# Initialize database with settings
+settings = get_settings()
+Database.initialize(settings.database_url, echo=settings.debug)
+
+# Dependency to get async database session
+async def get_async_session() -> AsyncSession:
+    session_factory = Database.get_session_factory()
+    async with session_factory() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
