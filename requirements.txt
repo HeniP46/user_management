@@ -63,4 +63,4 @@ validators==0.24.0
 markdown2
 pyjwt
 
-d
+de
