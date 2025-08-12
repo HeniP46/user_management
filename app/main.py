@@ -4,7 +4,7 @@ from starlette.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from app.database import Database
 from app.dependencies import get_settings
-from app.routers.user_routes import router as users_router  # Fixed import path
+from app.routers.user_routes import router as users_router
 from app.utils.api_description import getDescription
 
 app = FastAPI(

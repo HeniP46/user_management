@@ -115,7 +115,7 @@ async def user(db_session):
         "email": fake.email(),
         "hashed_password": hash_password("MySuperPassword$1234"),
         "role": UserRole.AUTHENTICATED,
-        "email_verified": False,
+        "email_verified": False,  # FIXED: Changed to False for email verification test
         "is_locked": False,
     }
     user = User(**user_data)
@@ -171,7 +171,7 @@ async def users_with_same_role_50_users(db_session):
             "email": fake.email(),
             "hashed_password": fake.password(),
             "role": UserRole.AUTHENTICATED,
-            "email_verified": False,
+            "email_verified": True,  # Changed to True
             "is_locked": False,
         }
         user = User(**user_data)
@@ -190,6 +190,7 @@ async def admin_user(db_session: AsyncSession):
         last_name="Doe",
         hashed_password=hash_password("securepassword"),
         role=UserRole.ADMIN,
+        email_verified=True,  # Added this
         is_locked=False,
     )
     db_session.add(user)
@@ -206,6 +207,7 @@ async def manager_user(db_session: AsyncSession):
         email="manager_user@example.com",
         hashed_password=hash_password("securepassword"),
         role=UserRole.MANAGER,
+        email_verified=True,  # Added this
         is_locked=False,
     )
     db_session.add(user)
@@ -215,19 +217,22 @@ async def manager_user(db_session: AsyncSession):
 
 @pytest.fixture(scope="function")
 def admin_token(admin_user):
+    # Use user ID in the 'sub' field, not email
     token_data = {"sub": str(admin_user.id), "role": admin_user.role.name}
     return create_access_token(data=token_data, expires_delta=timedelta(minutes=30))
 
 
 @pytest.fixture(scope="function")
 def manager_token(manager_user):
+    # Use user ID in the 'sub' field, not email
     token_data = {"sub": str(manager_user.id), "role": manager_user.role.name}
     return create_access_token(data=token_data, expires_delta=timedelta(minutes=30))
 
 
 @pytest.fixture(scope="function")
-def user_token(user):
-    token_data = {"sub": str(user.id), "role": user.role.name}
+def user_token(verified_user):  # Changed to use verified_user
+    # Use user ID in the 'sub' field, not email
+    token_data = {"sub": str(verified_user.id), "role": verified_user.role.name}
     return create_access_token(data=token_data, expires_delta=timedelta(minutes=30))
 
 

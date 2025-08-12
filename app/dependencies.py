@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from functools import lru_cache
 import jwt as pyjwt  # Use this alias to avoid conflicts
+from uuid import UUID
 from app.config_loader import settings, Settings
 from app.database import Database
 from app.utils.template_manager import TemplateManager
@@ -44,21 +45,28 @@ def get_current_user_data(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]
     except pyjwt.InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
     
-    user_email = payload.get("sub")
+    # The token contains user ID in 'sub' field
+    user_id = payload.get("sub")
     user_role = payload.get("role")
-    user_id = payload.get("id")  # Add user ID to payload when creating token
     
-    if not user_email or not user_role:
+    if not user_id or not user_role:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
     
-    return {"user_email": user_email, "role": user_role, "id": user_id}
+    return {"user_id": user_id, "role": user_role}
 
 async def get_current_user(
     user_data: Dict[str, Any] = Depends(get_current_user_data),
     db: AsyncSession = Depends(get_db)
-) -> User:
+) -> Dict[str, Any]:
     from app.services.user_service import UserService  # Import here to avoid circular import
-    user = await UserService.get_by_email(db, user_data["user_email"])
+    
+    # Convert string ID to UUID
+    try:
+        user_id = UUID(user_data["user_id"])
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user ID in token")
+    
+    user = await UserService.get_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
@@ -68,8 +76,14 @@ async def get_current_user(
     if not user.email_verified:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email not verified")
     
-    # Add user ID to the return data for convenience
-    return {"id": user.id, "email": user.email, "role": user.role, "user": user}
+    # Parse role from string to UserRole enum
+    try:
+        user_role = UserRole(user_data["role"])
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid role in token")
+    
+    # Return consistent format
+    return {"id": user.id, "email": user.email, "role": user_role, "user": user}
 
 def require_role(allowed_roles: List[UserRole]):
     def check_role(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:

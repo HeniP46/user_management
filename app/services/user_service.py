@@ -117,13 +117,11 @@ class UserService:
                     logger.error(f"User {user_id} not found.")
                     return None
 
-            # Use Pydantic UserUpdate model for validation and partial update
             validated_data = UserUpdate(**update_data).model_dump(exclude_unset=True)
 
             if 'password' in validated_data:
                 validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
 
-            # Update only fields provided
             for key, value in validated_data.items():
                 if hasattr(user, key):
                     setattr(user, key, value)
@@ -151,7 +149,6 @@ class UserService:
                 logger.error(f"User {user_id} not found.")
                 return None
 
-            # Filter valid profile fields
             allowed_fields = {
                 'first_name', 'last_name', 'bio', 'profile_picture_url', 
                 'linkedin_profile_url', 'github_profile_url'
@@ -209,7 +206,6 @@ class UserService:
                 await cls.increment_failed_login(session, email)
                 return None
                 
-            # Reset failed login attempts on successful login
             await cls.update_last_login(session, user.id)
             return user
         except Exception as e:
@@ -224,19 +220,15 @@ class UserService:
             if not user:
                 return False
                 
-            # Check if user has is_locked field
             if hasattr(user, 'is_locked') and user.is_locked:
                 return True
                 
-            # Check failed login attempts
             if hasattr(user, 'failed_login_attempts') and user.failed_login_attempts >= getattr(settings, 'max_login_attempts', 5):
-                # Check if lock period has expired
                 if hasattr(user, 'last_login_attempt') and user.last_login_attempt:
-                    lock_duration = timedelta(minutes=30)  # 30 minutes lock
+                    lock_duration = timedelta(minutes=30)
                     if datetime.now(timezone.utc) - user.last_login_attempt < lock_duration:
                         return True
                     else:
-                        # Reset failed attempts after lock period
                         user.failed_login_attempts = 0
                         await session.commit()
                         
@@ -247,17 +239,12 @@ class UserService:
 
     @classmethod
     async def upgrade_to_professional(cls, session: AsyncSession, user_id: UUID, upgrader_id: UUID = None) -> Union[bool, User]:
-        """
-        Upgrade user to professional status
-        Returns bool when upgrader_id is provided (permission check), User when upgrader_id is None
-        """
         try:
             user = await cls.get_by_id(session, user_id)
             if not user:
                 logger.error(f"User {user_id} not found.")
                 return False if upgrader_id else None
 
-            # If upgrader_id is provided, check permissions
             if upgrader_id is not None:
                 upgrader = await cls.get_by_id(session, upgrader_id)
                 if not upgrader or upgrader.role not in [UserRole.MANAGER, UserRole.ADMIN]:
@@ -285,17 +272,12 @@ class UserService:
 
     @classmethod
     async def downgrade_from_professional(cls, session: AsyncSession, user_id: UUID, downgrader_id: UUID = None) -> Union[bool, User]:
-        """
-        Downgrade user from professional status
-        Returns bool when downgrader_id is provided (permission check), User when downgrader_id is None
-        """
         try:
             user = await cls.get_by_id(session, user_id)
             if not user:
                 logger.error(f"User {user_id} not found.")
                 return False if downgrader_id else None
 
-            # If downgrader_id is provided, check permissions (only admin can downgrade)
             if downgrader_id is not None:
                 downgrader = await cls.get_by_id(session, downgrader_id)
                 if not downgrader or downgrader.role != UserRole.ADMIN:
@@ -327,7 +309,6 @@ class UserService:
         try:
             conditions = [User.role == UserRole.AUTHENTICATED, User.is_professional == False]
             
-            # Add email_verified condition if the field exists
             if hasattr(User, 'email_verified'):
                 conditions.append(User.email_verified == True)
             elif hasattr(User, 'is_verified'):
@@ -338,7 +319,6 @@ class UserService:
                 search_conditions.append(User.nickname.ilike(f"%{query}%"))
                 search_conditions.append(User.email.ilike(f"%{query}%"))
                 
-                # Add name search conditions if fields exist
                 if hasattr(User, 'first_name'):
                     search_conditions.append(User.first_name.ilike(f"%{query}%"))
                 if hasattr(User, 'last_name'):
@@ -349,7 +329,8 @@ class UserService:
             stmt = select(User).where(and_(*conditions)).offset(skip).limit(limit)
             result = await cls._execute_query(session, stmt)
             if result:
-                return result.scalars().all()
+                scalars_result = result.scalars()
+                return scalars_result.all()
             return []
         except Exception as e:
             logger.error(f"Error searching users for upgrade: {e}")
@@ -362,7 +343,8 @@ class UserService:
             query = select(User).where(User.is_professional == is_professional).offset(skip).limit(limit)
             result = await cls._execute_query(session, query)
             if result:
-                return result.scalars().all()
+                scalars_result = result.scalars()
+                return scalars_result.all()
             return []
         except Exception as e:
             logger.error(f"Error getting users by professional status: {e}")
@@ -377,7 +359,6 @@ class UserService:
                 logger.error(f"User {user_id} not found.")
                 return None
 
-            # Use the correct field name based on your model
             if hasattr(user, 'email_verified'):
                 user.email_verified = True
             elif hasattr(user, 'is_verified'):
@@ -464,7 +445,7 @@ class UserService:
 
             if hasattr(user, 'verification_token') and user.verification_token == token:
                 user.email_verified = True
-                user.verification_token = None  # Clear the token after successful verification
+                user.verification_token = None
                 user.updated_at = datetime.now(timezone.utc)
                 session.add(user)
                 await session.commit()

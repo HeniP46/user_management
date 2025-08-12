@@ -306,8 +306,11 @@ class TestUserProfileManagement:
                  role=UserRole.AUTHENTICATED, is_professional=False, hashed_password="hash2"),
         ]
         
+        # Properly mock the scalars chain
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = mock_users
         mock_result = AsyncMock()
-        mock_result.scalars.return_value.all.return_value = mock_users
+        mock_result.scalars.return_value = mock_scalars
         
         with patch.object(UserService, '_execute_query', new=AsyncMock(return_value=mock_result)):
             # Execute
@@ -330,8 +333,11 @@ class TestUserProfileManagement:
                  role=UserRole.AUTHENTICATED, is_professional=True, hashed_password="hash2"),
         ]
         
+        # Properly mock the scalars chain
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = mock_professional_users
         mock_result = AsyncMock()
-        mock_result.scalars.return_value.all.return_value = mock_professional_users
+        mock_result.scalars.return_value = mock_scalars
         
         with patch.object(UserService, '_execute_query', new=AsyncMock(return_value=mock_result)):
             # Execute
@@ -561,4 +567,3 @@ class TestProfileManagementIntegration:
             assert result.first_name == "Jane"
             # Email, role, and is_professional should not have changed through profile update
             assert result.email == "test@example.com"
-        
