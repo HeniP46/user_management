@@ -306,11 +306,12 @@ class TestUserProfileManagement:
                  role=UserRole.AUTHENTICATED, is_professional=False, hashed_password="hash2"),
         ]
         
-        # Properly mock the scalars chain
-        mock_scalars = MagicMock()
-        mock_scalars.all.return_value = mock_users
-        mock_result = AsyncMock()
-        mock_result.scalars.return_value = mock_scalars
+        # Create a proper mock for the SQLAlchemy result pattern
+        mock_scalars_result = MagicMock()
+        mock_scalars_result.all = MagicMock(return_value=mock_users)  # NOT async
+        
+        mock_result = MagicMock()  # NOT AsyncMock
+        mock_result.scalars = MagicMock(return_value=mock_scalars_result)
         
         with patch.object(UserService, '_execute_query', new=AsyncMock(return_value=mock_result)):
             # Execute
@@ -333,11 +334,12 @@ class TestUserProfileManagement:
                  role=UserRole.AUTHENTICATED, is_professional=True, hashed_password="hash2"),
         ]
         
-        # Properly mock the scalars chain
-        mock_scalars = MagicMock()
-        mock_scalars.all.return_value = mock_professional_users
-        mock_result = AsyncMock()
-        mock_result.scalars.return_value = mock_scalars
+        # Create a proper mock for the SQLAlchemy result pattern
+        mock_scalars_result = MagicMock()
+        mock_scalars_result.all = MagicMock(return_value=mock_professional_users)  # NOT async
+        
+        mock_result = MagicMock()  # NOT AsyncMock
+        mock_result.scalars = MagicMock(return_value=mock_scalars_result)
         
         with patch.object(UserService, '_execute_query', new=AsyncMock(return_value=mock_result)):
             # Execute
