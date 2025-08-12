@@ -81,6 +81,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
       
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -94,7 +95,7 @@ jobs:
       - name: Scan the Docker image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'hpp46/user_management:${{ github.sha }}'
+          image-ref: 'hpp46/user_management:latest'
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
