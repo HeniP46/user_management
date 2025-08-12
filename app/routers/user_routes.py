@@ -3,27 +3,24 @@ This Python file is part of a FastAPI application, demonstrating user management
 updating, and deleting (CRUD) user information. It uses OAuth2 with Password Flow for security, ensuring that only authenticated
 users can perform certain operations. Additionally, the file showcases the integration of FastAPI with SQLAlchemy for asynchronous
 database operations, enhancing performance by non-blocking database calls.
-
 The implementation emphasizes RESTful API principles, with endpoints for each CRUD operation and the use of HTTP status codes
 and exceptions to communicate the outcome of operations. It introduces the concept of HATEOAS (Hypermedia as the Engine of
 Application State) by including navigational links in API responses, allowing clients to discover other related operations dynamically.
-
 OAuth2PasswordBearer is employed to extract the token from the Authorization header and verify the user's identity, providing a layer
 of security to the operations that manipulate user data.
-
 Key Highlights:
 - Use of FastAPI's Dependency Injection system to manage database sessions and user authentication.
 - Demonstrates how to perform CRUD operations in an asynchronous manner using SQLAlchemy with FastAPI.
 - Implements HATEOAS by generating dynamic links for user-related actions, enhancing API discoverability.
 - Utilizes OAuth2PasswordBearer for securing API endpoints, requiring valid access tokens for operations.
 """
-
 from builtins import dict, int, len, str
 from datetime import timedelta
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 from app.dependencies import get_current_user, get_db, get_email_service, require_role
 from app.schemas.pagination_schema import EnhancedPagination
 from app.schemas.token_schema import TokenResponse
@@ -33,6 +30,7 @@ from app.services.jwt_service import create_access_token
 from app.utils.link_generation import create_user_links, generate_pagination_links
 from app.dependencies import get_settings
 from app.services.email_service import EmailService
+from app.models.user_model import UserRole
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -44,7 +42,7 @@ async def get_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
     token: str = Depends(oauth2_scheme),
-    current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))
+    current_user: dict = Depends(require_role([UserRole.ADMIN, UserRole.MANAGER]))
 ):
     """
     Endpoint to fetch a user by their unique identifier (UUID).
@@ -52,7 +50,6 @@ async def get_user(
     user = await UserService.get_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
     return UserResponse.model_construct(
         id=user.id,
         nickname=user.nickname,
@@ -68,7 +65,7 @@ async def get_user(
         created_at=user.created_at,
         updated_at=user.updated_at,
         is_professional=user.is_professional,
-        links=create_user_links(user.id, request)  
+        links=create_user_links(user.id, request)
     )
 
 @router.put("/users/{user_id}", response_model=UserResponse, name="update_user", tags=["User Management Requires (Admin or Manager Roles)"])
@@ -78,7 +75,7 @@ async def update_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
     token: str = Depends(oauth2_scheme),
-    current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))
+    current_user: dict = Depends(require_role([UserRole.ADMIN, UserRole.MANAGER]))
 ):
     """
     Update user information.
@@ -87,7 +84,6 @@ async def update_user(
     updated_user = await UserService.update(db, user_id, user_data)
     if not updated_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
     return UserResponse.model_construct(
         id=updated_user.id,
         bio=updated_user.bio,
@@ -111,12 +107,13 @@ async def delete_user(
     user_id: UUID,
     db: AsyncSession = Depends(get_db),
     token: str = Depends(oauth2_scheme),
-    current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))
+    current_user: dict = Depends(require_role([UserRole.ADMIN, UserRole.MANAGER]))
 ):
     """
     Delete a user by their ID.
     """
-    success = await UserService.delete(db, user_id)
+    # Use the new delete_by_id method that handles the User object lookup
+    success = await UserService.delete_by_id(db, user_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -128,7 +125,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     email_service: EmailService = Depends(get_email_service),
     token: str = Depends(oauth2_scheme),
-    current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))
+    current_user: dict = Depends(require_role([UserRole.ADMIN, UserRole.MANAGER]))
 ):
     """
     Create a new user.
@@ -136,11 +133,9 @@ async def create_user(
     existing_user = await UserService.get_by_email(db, user.email)
     if existing_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists")
-    
     created_user = await UserService.create(db, user.model_dump(), email_service)
     if not created_user:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create user")
-    
     return UserResponse.model_construct(
         id=created_user.id,
         bio=created_user.bio,
@@ -163,11 +158,10 @@ async def list_users(
     skip: int = 0,
     limit: int = 10,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))
+    current_user: dict = Depends(require_role([UserRole.ADMIN, UserRole.MANAGER]))
 ):
     total_users = await UserService.count(db)
     users = await UserService.list_users(db, skip, limit)
-
     user_responses = [
         UserResponse.model_construct(
             id=user.id,
@@ -187,9 +181,7 @@ async def list_users(
             links=create_user_links(user.id, request)
         ) for user in users
     ]
-    
     pagination_links = generate_pagination_links(request, skip, limit, total_users)
-    
     return UserListResponse(
         items=user_responses,
         total=total_users,
@@ -236,16 +228,20 @@ async def login(
     """
     if await UserService.is_account_locked(session, form_data.username):
         raise HTTPException(status_code=400, detail="Account locked due to too many failed login attempts.")
-
-    user = await UserService.login_user(session, form_data.username, form_data.password)
-    if user:
+    # Check if user exists and is verified
+    user = await UserService.get_by_email(session, form_data.username)
+    if not user:
+        raise HTTPException(status_code=401, detail="Incorrect email or password.")
+    if not user.email_verified:
+        raise HTTPException(status_code=401, detail="Please verify your email address.")
+    # Now authenticate
+    authenticated_user = await UserService.login_user(session, form_data.username, form_data.password)
+    if authenticated_user:
         access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
-
         access_token = create_access_token(
-            data={"sub": user.email, "role": str(user.role.name)},
+            data={"sub": authenticated_user.email, "role": str(authenticated_user.role.name)},
             expires_delta=access_token_expires
         )
-
         return {"access_token": access_token, "token_type": "bearer"}
     raise HTTPException(status_code=401, detail="Incorrect email or password.")
 
@@ -274,7 +270,6 @@ async def update_own_profile(
     updated_user = await UserService.update(db, current_user['id'], user_update.model_dump(exclude_unset=True))
     if not updated_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
     return UserResponse.model_construct(
         id=updated_user.id,
         nickname=updated_user.nickname,
@@ -294,8 +289,6 @@ async def update_own_profile(
     )
 
 # NEW ENDPOINT: Upgrade professional status (only ADMIN or MANAGER)
-from pydantic import BaseModel
-
 class ProfessionalStatusUpdate(BaseModel):
     is_professional: bool
 
@@ -305,14 +298,12 @@ async def upgrade_professional_status(
     status_update: ProfessionalStatusUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))
+    current_user: dict = Depends(require_role([UserRole.ADMIN, UserRole.MANAGER]))
 ):
     updated_user = await UserService.update(db, user_id, status_update.model_dump(exclude_unset=True))
     if not updated_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
     # Optional: send notification email here if you want
-
     return UserResponse.model_construct(
         id=updated_user.id,
         nickname=updated_user.nickname,

@@ -13,6 +13,7 @@ class UserRole(Enum):
     """Enumeration of user roles within the application, stored as ENUM in the database."""
     ANONYMOUS = "ANONYMOUS"
     AUTHENTICATED = "AUTHENTICATED"
+    PROFESSIONAL = "PROFESSIONAL"  # Added PROFESSIONAL role
     MANAGER = "MANAGER"
     ADMIN = "ADMIN"
 
